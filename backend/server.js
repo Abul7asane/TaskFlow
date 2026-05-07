@@ -26,9 +26,12 @@ connectDB();
 
 // Routes d'authentification
 app.use('/api/auth', authRoutes);
-// Routes de projets
+//Routes pour les projets 
+app.use('/api/projects',projectRoutes);
+// Routes pour les taches
 app.use('/api/tasks', taskRoutes);
 app.use('/api/projects', taskRoutes); // pour GET /api/projects/:id/tasks
+
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
