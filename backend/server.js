@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
+const projectRoutes = require('./routes/projects');
 
 const app = express();
 
@@ -25,6 +26,8 @@ connectDB();
 
 // Routes d'authentification
 app.use('/api/auth', authRoutes);
+// Routes pour les projets
+app.use('/api/projects', projectRoutes);
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
