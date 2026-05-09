@@ -8,8 +8,52 @@ router.use(authMiddleware);
 // 
 // GET /api/projects/:id/tasks
 // Recuperer toutes les taches d'un projet
-//  
+// Avec filtrage conditionnel, recherche $regex et pagination
+//
 router.get('/projects/:id/tasks', async (req, res) => {
+  try {
+    // Recuperer les parametres de filtre depuis l'URL
+    // Exemple : /api/projects/123/tasks?statut=en cours&priorite=haute&page=1&limit=5
+    const { statut, priorite, assignedTo, recherche, page, limit } = req.query;
+    // Construire le filtre de base : appartient a ce projet
+    const filtre = { projet: req.params.id };
+    // Ajouter les conditions SEULEMENT si le parametre est present
+    if (statut) filtre.statut = statut;
+    if (priorite) filtre.priorite = priorite;
+    if (assignedTo) filtre.assignedTo = assignedTo;
+    // Recherche par mot-cle dans titre OU description
+    // $regex = cherche le mot n'importe ou dans le texte
+    // i = insensible a la casse (majuscule/minuscule)
+    if (recherche) {
+      filtre.$or = [
+        { titre: { $regex: recherche, $options: 'i' } },
+        { description: { $regex: recherche, $options: 'i' } }
+      ];
+    }
+    // Pagination
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+    const skip = (pageNum - 1) * limitNum;
+    // Executer la requete avec le filtre construit
+    const taches = await Task.find(filtre)
+      .populate('assignedTo', 'nom prenom email')
+      .skip(skip)
+      .limit(limitNum);
+    // Compter le total pour la pagination
+    const total = await Task.countDocuments(filtre);
+    // Reponse avec data + infos pagination
+    res.json({
+      data: taches,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+// Encienne route, remplacée par la route avec filtres et pagination  
+/*router.get('/projects/:id/tasks', async (req, res) => {
   try {
     const taches = await Task.find({ projet: req.params.id })
     .populate(
@@ -21,7 +65,7 @@ router.get('/projects/:id/tasks', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
-});
+});*/
 //
 // GET /api/tasks/my-tasks 
 // taches assignees au membre connecte
