@@ -6,6 +6,8 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const projectRoutes = require('./routes/projects');
 const taskRoutes = require('./routes/tasks');
+const dashboardRoutes = require('./routes/dashboard');
+
 const app = express();
 
 // Middleware pour lire le JSON dans le corps des requêtes
@@ -30,7 +32,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 // Routes pour les taches
 app.use('/api/tasks', taskRoutes);
-app.use('/api/projects', taskRoutes); // pour GET /api/projects/:id/tasks
+app.use('/api/projects', taskRoutes);
+// Route pour le dashboard
+app.use('/api/dashboard', dashboardRoutes);
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;

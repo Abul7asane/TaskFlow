@@ -1,107 +1,204 @@
- const express = require('express');
- const router = express.Router();
- const Task = require('../models/Task');
- const authMiddleware = require('../middleware/authMiddleware');
-  // Toutes les routes sont protegees
- router.use(authMiddleware);
-  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- // GET /api/projects/:id/tasks
- // Recuperer toutes les taches d'un projet
- // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- router.get('/projects/:id/tasks', async (req, res) => {
- try {
- const taches = await Task.find({ projet: req.params.id });
- res.json(taches);
- } catch (error) {
- res.status(500).json({ message: 'Erreur serveur', error: error.message });
- }
- });
-  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- // POST /api/tasks
- // Creer une nouvelle tache
- // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- router.post('/', async (req, res) => {
- try {
- const { titre, description, priorite, statut, projet, dateLimite } = req.body;
- 
- if (!titre || !projet) {
- return res.status(400).json({ message: 'Titre et projet obligatoires' });
- }
-  const tache = new Task({ titre, description, priorite, statut, projet, dateLimite });
- await tache.save();
-  res.status(201).json(tache);
- } catch (error) {
- res.status(500).json({ message: 'Erreur serveur', error: error.message });
- }
- });
-  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- // GET /api/tasks/:id
- // Recuperer une tache par son id
- // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- router.get('/:id', async (req, res) => {
- try {
- const tache = await Task.findById(req.params.id);
- if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
- res.json(tache);
- } catch (error) {
- res.status(500).json({ message: 'Erreur serveur', error: error.message });
- }
- });
-  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- // PUT /api/tasks/:id
- // Modifier une tache
- // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- router.put('/:id', async (req, res) => {
- try {
- const tache = await Task.findByIdAndUpdate(
- req.params.id,
- req.body,
- { new: true, runValidators: true }
- );
- if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
- res.json(tache);
- } catch (error) {
- res.status(500).json({ message: 'Erreur serveur', error: error.message });
- }
- });
-  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- // DELETE /api/tasks/:id
- // Supprimer une tache
- // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
- router.delete('/:id', async (req, res) => {
- try {
- const tache = await Task.findByIdAndDelete(req.params.id);
- if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
- res.json({ message: 'Tache supprimee avec succes' });
- } catch (error) {
+const express = require('express');
+const router = express.Router();
+const Task = require('../models/Task');
+const authMiddleware = require('../middleware/authMiddleware');
 
- res.status(500).json({ message: 'Erreur serveur', error: error.message });
- }
- });
- // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// Toutes les routes sont protegees
+router.use(authMiddleware);
+// 
+// GET /api/projects/:id/tasks
+// Recuperer toutes les taches d'un projet
+// Avec filtrage conditionnel, recherche $regex et pagination
+//
+router.get('/projects/:id/tasks', async (req, res) => {
+  try {
+    // Recuperer les parametres de filtre depuis l'URL
+    // Exemple : /api/projects/123/tasks?statut=en cours&priorite=haute&page=1&limit=5
+    const { statut, priorite, assignedTo, recherche, page, limit } = req.query;
+    // Construire le filtre de base : appartient a ce projet
+    const filtre = { projet: req.params.id };
+    // Ajouter les conditions SEULEMENT si le parametre est present
+    if (statut) filtre.statut = statut;
+    if (priorite) filtre.priorite = priorite;
+    if (assignedTo) filtre.assignedTo = assignedTo;
+    // Recherche par mot-cle dans titre OU description
+    // $regex = cherche le mot n'importe ou dans le texte
+    // i = insensible a la casse (majuscule/minuscule)
+    if (recherche) {
+      filtre.$or = [
+        { titre: { $regex: recherche, $options: 'i' } },
+        { description: { $regex: recherche, $options: 'i' } }
+      ];
+    }
+    // Pagination
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+    const skip = (pageNum - 1) * limitNum;
+    // Executer la requete avec le filtre construit
+    const taches = await Task.find(filtre)
+      .populate('assignedTo', 'nom prenom email')
+      .skip(skip)
+      .limit(limitNum);
+    // Compter le total pour la pagination
+    const total = await Task.countDocuments(filtre);
+    // Reponse avec data + infos pagination
+    res.json({
+      data: taches,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+// Encienne route, remplacée par la route avec filtres et pagination  
+/*router.get('/projects/:id/tasks', async (req, res) => {
+  try {
+    const taches = await Task.find({ projet: req.params.id })
+    .populate(
+      'assignedTo', // champ a remplir
+      'nom prenom email' // retourner SEULEMENT ces champs
+      // le mot de passe NE sera PAS retourne
+    );
+    res.json(taches);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});*/
+//
+// GET /api/tasks/my-tasks 
+// taches assignees au membre connecte
+//
+router.get('/my-tasks', async (req, res) => {
+  try {
+    const taches = await Task.find({ assignedTo: req.userId })
+      .populate('projet', 'titre')
+      .populate('assignedTo', 'nom prenom email');
+    res.json(taches);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+// GET /api/projects/:id/my-tasks 
+// Conditions multiples
+//
+router.get('/projects/:id/my-tasks', async (req, res) => {
+  try {
+    const taches = await Task.find({
+      projet: req.params.id, // condition 1 : ce projet
+      assignedTo: req.userId // condition 2 : assigne a moi
+    }).populate('assignedTo', 'nom prenom email')
+      .sort({ priorite: -1 });
+    res.json(taches);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+//  
+// POST /api/tasks
+// Creer une nouvelle tache
+//  
+router.post('/', async (req, res) => {
+  try {
+    const { titre, description, priorite, statut, projet, dateLimite } = req.body;
+
+    if (!titre || !projet) {
+      return res.status(400).json({ message: 'Titre et projet obligatoires' });
+    }
+    const tache = new Task({ titre, description, priorite, statut, projet, dateLimite });
+    await tache.save();
+    res.status(201).json(tache);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+//  
+// GET /api/tasks/:id
+// Recuperer une tache par son id
+//  
+router.get('/:id', async (req, res) => {
+  try {
+    const tache = await Task.findById(req.params.id);
+    if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
+      res.json(tache);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+//  
+// PUT /api/tasks/:id
+// Modifier une tache
+//  
+router.put('/:id', async (req, res) => {
+  try {
+    const tache = await Task.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
+    res.json(tache);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+//  
+// DELETE /api/tasks/:id
+// Supprimer une tache
+//  
+router.delete('/:id', async (req, res) => {
+  try {
+    const tache = await Task.findByIdAndDelete(req.params.id);
+    if(!tache) return res.status(404).json({ message: 'Tache non trouvee' });
+    res.json({ message: 'Tache supprimee avec succes' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+});
+//  
 // PATCH /api/tasks/:id/status
 // Mettre a jour UNIQUEMENT le statut d'une tache
 // Exemple : { "statut": "en cours" }
-// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+//  
 router.patch('/:id/status', async (req, res) => {
-try {
-const { statut } = req.body;
-// Verifier que le statut est valide
-const statutsValides = ['a faire', 'en cours', 'termine'];
-if (!statutsValides.includes(statut)) {
-return res.status(400).json({
-message: 'Statut invalide. Valeurs acceptees : a faire, en cours, termine'
+  try {
+    const { statut } = req.body;
+    // Verifier que le statut est valide
+    const statutsValides = ['à faire', 'en cours', 'terminé'];
+    if(!statutsValides.includes(statut)) {
+      return res.status(400).json({
+        message: 'Statut invalide. Valeurs acceptees : a faire, en cours, termine'
+      });
+    }
+    const tache = await Task.findByIdAndUpdate(
+      req.params.id,
+      { statut }, // mettre a jour SEULEMENT le statut
+      { new: true }
+    );
+    if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
+    res.json(tache);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
 });
-}
-const tache = await Task.findByIdAndUpdate(
-req.params.id,
-{ statut }, // mettre a jour SEULEMENT le statut
-{ new: true }
-);
-if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
-res.json(tache);
-} catch (error) {
-res.status(500).json({ message: 'Erreur serveur', error: error.message });
-}
+//
+// PATCH /api/tasks/:id/assign 
+// assigner une tache a un membre
+// Exemple : { "assignedTo": "idUser" }
+router.patch('/:id/assign', async (req, res) => {
+  try {
+    const { assignedTo } = req.body;
+    const tache = await Task.findByIdAndUpdate(
+      req.params.id,
+      { assignedTo },
+      { new: true }
+    ).populate('assignedTo', 'nom prenom email');
+    if (!tache) return res.status(404).json({ message: 'Tache non trouvee' });
+    res.json(tache);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
 });
-  module.exports = router;
+
+module.exports = router;
